@@ -1,3 +1,15 @@
+# Env
+.env
+.env.*
+!.env.example
+
+# SQLite
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+server/data/
+
 # Logs
 logs
 *.log
@@ -22,3 +34,4 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.agents/
