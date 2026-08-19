@@ -1,3 +1,5 @@
+import { currencyMinorExponent } from './currency.js'
+
 export type MoneyMinor = number
 
 export type DiscountType = 'percent' | 'amount'
@@ -46,4 +48,15 @@ export function computeTotals(
   const tax = round((taxableBase * taxRateBps) / 10000)
   const total = taxableBase + tax
   return { subtotalMinor: subtotal, discountMinor: discount, taxMinor: tax, totalMinor: total }
+}
+
+export function formatMinor(minor: MoneyMinor, code: string): string {
+  const exp = currencyMinorExponent(code)
+  const major = minor / 10 ** exp
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: code,
+    minimumFractionDigits: exp,
+    maximumFractionDigits: exp,
+  }).format(major)
 }

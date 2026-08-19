@@ -1,6 +1,8 @@
-import { createHash, randomBytes } from 'node:crypto'
 import { SignJWT, jwtVerify } from 'jose'
 import { config } from '../config.js'
+import { randomToken, hashToken } from '../security/tokens.js'
+
+export { hashToken }
 
 const UNITS: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 }
 
@@ -30,9 +32,5 @@ export async function verifyAccessToken(token: string): Promise<{ sub: string }>
 }
 
 export function generateRefreshToken(): string {
-  return randomBytes(32).toString('base64url')
-}
-
-export function hashToken(token: string): string {
-  return createHash('sha256').update(token).digest('hex')
+  return randomToken(32)
 }

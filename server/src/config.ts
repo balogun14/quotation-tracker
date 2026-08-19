@@ -14,7 +14,9 @@ const envSchema = z.object({
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
   EMAIL_PROVIDER: z.enum(['console', 'resend']).default('console'),
   RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().default('Quotely <no-reply@quotely.app>'),
   FX_BASE_URL: z.string().default('https://api.frankfurter.dev/v1'),
+  PUBLIC_BASE_URL: z.string().default('http://localhost:5173'),
   FILE_STORAGE_DIR: z.string().default('./data/files'),
   DEFAULT_QUOTE_EXPIRY_DAYS: z.coerce.number().int().positive().default(14),
 })
