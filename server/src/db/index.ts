@@ -22,11 +22,10 @@ export function openDb(url: string = config.DATABASE_URL): DatabaseSync {
   return db
 }
 
-const toValues = (row: unknown) => Object.values(row as Record<string, unknown>)
-
 function proxyCallback(sqlite: DatabaseSync): RemoteCallback {
   return async (sql, params, method) => {
     const stmt = sqlite.prepare(sql)
+    stmt.setReturnArrays(true)
     if (method === 'run') {
       stmt.run(...params)
       return { rows: [] }
@@ -34,10 +33,10 @@ function proxyCallback(sqlite: DatabaseSync): RemoteCallback {
     if (method === 'get') {
       const row = stmt.get(...params)
       if (row === undefined) return { rows: undefined as unknown as unknown[] }
-      return { rows: toValues(row) }
+      return { rows: row as unknown as unknown[] }
     }
     const rows = stmt.all(...params)
-    return { rows: rows.map(toValues) }
+    return { rows: rows as unknown as unknown[][] }
   }
 }
 
