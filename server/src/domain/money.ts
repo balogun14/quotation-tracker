@@ -60,3 +60,9 @@ export function formatMinor(minor: MoneyMinor, code: string): string {
     maximumFractionDigits: exp,
   }).format(major)
 }
+
+export function convertMinor(minor: MoneyMinor, from: string, to: string, rate: number): MoneyMinor {
+  if (from === to) return minor
+  const fromMajor = minor / 10 ** currencyMinorExponent(from)
+  return Math.round(fromMajor * rate * 10 ** currencyMinorExponent(to))
+}
