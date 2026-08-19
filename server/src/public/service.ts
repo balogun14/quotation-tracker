@@ -9,10 +9,11 @@ import {
   type Quote,
 } from '../db/schema.js'
 import { errors } from '../errors.js'
-import { hashToken } from '../security/tokens.js'
+import { hashToken, randomToken } from '../security/tokens.js'
 import type { QuoteSnapshot } from '../quote/snapshot.js'
 import type { FileStorageProvider } from '../files/storage.js'
 import { requireMember } from '../workspace/service.js'
+import { cancelPendingFollowUps } from '../followup/service.js'
 
 export interface PublicQuoteView {
   snapshot: QuoteSnapshot
@@ -25,6 +26,20 @@ export interface DecideInput {
   decision: 'accepted' | 'declined'
   recipientName?: string
   recipientEmail?: string
+}
+
+export async function issuePublicLink(
+  db: TxDb,
+  quoteVersionId: string,
+  expiresAt: Date,
+): Promise<string> {
+  const token = randomToken(32)
+  await db.insert(publicLinks).values({
+    quoteVersionId,
+    tokenHash: hashToken(token),
+    expiresAt,
+  })
+  return token
 }
 
 export function createPublicService(storage: FileStorageProvider) {
@@ -97,6 +112,7 @@ export function createPublicService(storage: FileStorageProvider) {
       await tx.update(publicLinks).set({ revokedAt: new Date() }).where(eq(publicLinks.id, row.linkId))
     })
 
+    await cancelPendingFollowUps(db, row.quoteId)
     return { decision: input.decision }
   }
 

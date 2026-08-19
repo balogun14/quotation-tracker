@@ -10,6 +10,8 @@ import { LocalFileStorage, type FileStorageProvider } from '../files/storage.js'
 import { createEmailProvider, type EmailProvider } from '../email/provider.js'
 import { randomToken, hashToken } from '../security/tokens.js'
 import { config } from '../config.js'
+import { scheduleFollowUp } from '../followup/service.js'
+import { enqueueJob } from '../jobs/service.js'
 
 export interface SendDeps {
   storage: FileStorageProvider
@@ -150,6 +152,11 @@ export function createSendService(deps: SendDeps) {
         console.warn('Failed to send quote email', err)
       }
     }
+
+    const updated = await getQuote(db, workspaceId, quoteId)
+    await scheduleFollowUp(db, updated, (type, payload, scheduledAt) =>
+      enqueueJob(db, type, payload, { scheduledAt }),
+    )
 
     return { quoteId, versionNumber, publicToken: token, publicUrl }
   }

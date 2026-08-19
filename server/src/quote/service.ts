@@ -5,6 +5,7 @@ import { errors } from '../errors.js'
 import { computeTotals } from '../domain/money.js'
 import { canTransition } from '../domain/lifecycle.js'
 import { requireMember } from '../workspace/service.js'
+import { cancelPendingFollowUps } from '../followup/service.js'
 import { parseQuoteInput, parseQuoteFilter, type QuoteInput } from './schema.js'
 
 export interface QuoteWithItems extends Quote {
@@ -153,6 +154,7 @@ export async function cancelQuote(
     .where(eq(quotes.id, quoteId))
     .returning()
   if (!updated) throw errors.notFound('Quote not found')
+  await cancelPendingFollowUps(db, quoteId)
   return withItems(db, updated)
 }
 
