@@ -7,6 +7,8 @@ import { config } from '../config.js'
 import * as schema from './schema.js'
 
 export type Db = SqliteRemoteDatabase<typeof schema>
+type TxCallback = Parameters<Db['transaction']>[0]
+export type TxDb = Db | Parameters<TxCallback>[0]
 
 export function openDb(url: string = config.DATABASE_URL): DatabaseSync {
   if (url !== ':memory:') {
