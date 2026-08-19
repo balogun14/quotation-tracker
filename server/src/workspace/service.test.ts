@@ -27,7 +27,7 @@ describe('workspace service', () => {
     expect(memberships).toHaveLength(1)
     expect(memberships[0]?.role).toBe('owner')
 
-    await updateBranding(db, workspace.id, { accentColor: '#FF0000', defaultCurrency: 'USD' })
+    await updateBranding(db, workspace.id, user.id, { accentColor: '#FF0000', defaultCurrency: 'USD' })
     const membership = await getMembership(db, workspace.id, user.id)
     expect(membership?.role).toBe('owner')
 
@@ -58,7 +58,7 @@ describe('workspace service', () => {
       businessName: 'Acme',
     })
 
-    await expect(removeMember(db, workspace.id, user.id)).rejects.toMatchObject({ code: 'CONFLICT' })
+    await expect(removeMember(db, workspace.id, user.id, user.id)).rejects.toMatchObject({ code: 'CONFLICT' })
     close()
   })
 

@@ -12,6 +12,7 @@ import { randomToken, hashToken } from '../security/tokens.js'
 import { config } from '../config.js'
 import { scheduleFollowUp } from '../followup/service.js'
 import { enqueueJob } from '../jobs/service.js'
+import { recordAudit } from '../audit/service.js'
 
 export interface SendDeps {
   storage: FileStorageProvider
@@ -154,6 +155,14 @@ export function createSendService(deps: SendDeps) {
     }
 
     const updated = await getQuote(db, workspaceId, quoteId)
+    await recordAudit(db, {
+      workspaceId,
+      actorId,
+      action: 'quote.sent',
+      entityType: 'quote',
+      entityId: quoteId,
+      after: { versionNumber, status: updated.status, sentAt: updated.sentAt },
+    })
     await scheduleFollowUp(db, updated, (type, payload, scheduledAt) =>
       enqueueJob(db, type, payload, { scheduledAt }),
     )

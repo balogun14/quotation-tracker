@@ -1,4 +1,4 @@
-import { and, count, eq } from 'drizzle-orm'
+import { and, count, eq, isNull } from 'drizzle-orm'
 import type { TxDb } from '../db/index.js'
 import {
   users,
@@ -9,6 +9,7 @@ import {
 } from '../db/schema.js'
 import { errors } from '../errors.js'
 import { can, type Role } from '../auth/authorization.js'
+import { recordAudit } from '../audit/service.js'
 
 export interface BrandingInput {
   businessName?: string
@@ -42,9 +43,24 @@ export async function getMembership(
   return rows[0] ?? null
 }
 
-export async function requireMember(db: TxDb, workspaceId: string, userId: string) {
+export async function requireMember(
+  db: TxDb,
+  workspaceId: string,
+  userId: string,
+  opts: { includeDeleted?: boolean } = {},
+) {
   const membership = await getMembership(db, workspaceId, userId)
   if (!membership) throw errors.forbidden('You are not a member of this workspace')
+  if (!opts.includeDeleted) {
+    const ws = (
+      await db
+        .select({ deletedAt: workspaces.deletedAt })
+        .from(workspaces)
+        .where(and(eq(workspaces.id, workspaceId), isNull(workspaces.deletedAt)))
+        .limit(1)
+    )[0]
+    if (!ws) throw errors.forbidden('This workspace has been deleted')
+  }
   return membership
 }
 
@@ -53,8 +69,9 @@ export async function requirePermission(
   workspaceId: string,
   userId: string,
   permission: Parameters<typeof can>[1],
+  opts?: { includeDeleted?: boolean },
 ) {
-  const membership = await requireMember(db, workspaceId, userId)
+  const membership = await requireMember(db, workspaceId, userId, opts)
   if (!can(membership.role, permission)) throw errors.forbidden('Insufficient permissions')
   return membership
 }
@@ -99,8 +116,25 @@ async function ownerCount(db: TxDb, workspaceId: string): Promise<number> {
   return rows[0]?.n ?? 0
 }
 
-export async function updateBranding(db: TxDb, workspaceId: string, input: BrandingInput) {
-  return db.update(workspaces).set(input).where(eq(workspaces.id, workspaceId)).returning()
+export async function updateBranding(db: TxDb, workspaceId: string, actorId: string, input: BrandingInput) {
+  const before = (await db.select().from(workspaces).where(eq(workspaces.id, workspaceId)).limit(1))[0]
+  const updated = await db
+    .update(workspaces)
+    .set(input)
+    .where(eq(workspaces.id, workspaceId))
+    .returning()
+  if (before) {
+    await recordAudit(db, {
+      workspaceId,
+      actorId,
+      action: 'workspace.branding_updated',
+      entityType: 'workspace',
+      entityId: workspaceId,
+      before,
+      after: updated[0],
+    })
+  }
+  return updated[0]
 }
 
 export async function changeRole(
@@ -122,10 +156,19 @@ export async function changeRole(
     .update(workspaceMembers)
     .set({ role })
     .where(eq(workspaceMembers.id, target.id))
+  await recordAudit(db, {
+    workspaceId,
+    actorId,
+    action: 'member.role_changed',
+    entityType: 'user',
+    entityId: targetUserId,
+    before: { role: target.role },
+    after: { role },
+  })
   return { ...target, role }
 }
 
-export async function removeMember(db: TxDb, workspaceId: string, targetUserId: string) {
+export async function removeMember(db: TxDb, workspaceId: string, actorId: string, targetUserId: string) {
   const target = await getMembership(db, workspaceId, targetUserId)
   if (!target) throw errors.notFound('Member not found')
 
@@ -135,4 +178,12 @@ export async function removeMember(db: TxDb, workspaceId: string, targetUserId: 
   }
 
   await db.delete(workspaceMembers).where(eq(workspaceMembers.id, target.id))
+  await recordAudit(db, {
+    workspaceId,
+    actorId,
+    action: 'member.removed',
+    entityType: 'user',
+    entityId: targetUserId,
+    after: { role: target.role },
+  })
 }

@@ -14,6 +14,7 @@ import type { QuoteSnapshot } from '../quote/snapshot.js'
 import type { FileStorageProvider } from '../files/storage.js'
 import { requireMember } from '../workspace/service.js'
 import { cancelPendingFollowUps } from '../followup/service.js'
+import { recordAudit } from '../audit/service.js'
 
 export interface PublicQuoteView {
   snapshot: QuoteSnapshot
@@ -49,6 +50,7 @@ export function createPublicService(storage: FileStorageProvider) {
         linkId: publicLinks.id,
         expiresAt: publicLinks.expiresAt,
         quoteId: quoteVersions.quoteId,
+        workspaceId: quotes.workspaceId,
         versionId: quoteVersions.id,
         snapshotJson: quoteVersions.snapshotJson,
         pdfFileId: quoteVersions.pdfFileId,
@@ -113,6 +115,14 @@ export function createPublicService(storage: FileStorageProvider) {
     })
 
     await cancelPendingFollowUps(db, row.quoteId)
+    await recordAudit(db, {
+      workspaceId: row.workspaceId,
+      actorId: null,
+      action: 'quote.decided',
+      entityType: 'quote',
+      entityId: row.quoteId,
+      after: { decision: input.decision, recipientName: input.recipientName ?? null, recipientEmail: input.recipientEmail ?? null },
+    })
     return { decision: input.decision }
   }
 

@@ -6,6 +6,7 @@ import { computeTotals } from '../domain/money.js'
 import { canTransition } from '../domain/lifecycle.js'
 import { requireMember } from '../workspace/service.js'
 import { cancelPendingFollowUps } from '../followup/service.js'
+import { recordAudit } from '../audit/service.js'
 import { parseQuoteInput, parseQuoteFilter, type QuoteInput } from './schema.js'
 
 export interface QuoteWithItems extends Quote {
@@ -155,6 +156,15 @@ export async function cancelQuote(
     .returning()
   if (!updated) throw errors.notFound('Quote not found')
   await cancelPendingFollowUps(db, quoteId)
+  await recordAudit(db, {
+    workspaceId,
+    actorId,
+    action: 'quote.cancelled',
+    entityType: 'quote',
+    entityId: quoteId,
+    before: { status: quote.status },
+    after: { status: 'cancelled' },
+  })
   return withItems(db, updated)
 }
 

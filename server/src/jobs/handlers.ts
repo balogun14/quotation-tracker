@@ -4,6 +4,8 @@ import { followUps, quotes, quoteVersions, workspaces, type Job } from '../db/sc
 import type { EmailProvider } from '../email/provider.js'
 import { cancelPendingFollowUps } from '../followup/service.js'
 import { issuePublicLink } from '../public/service.js'
+import { createFxRateProvider } from '../fx/provider.js'
+import { purgeDeletedWorkspaces } from '../workspace/delete.js'
 import { config } from '../config.js'
 
 export type JobHandler = (db: Db, job: Job, payload: Record<string, unknown>) => Promise<void>
@@ -78,6 +80,18 @@ export function createHandlers(email: EmailProvider): Record<string, JobHandler>
         text: String(payload.text ?? ''),
         replyTo: payload.replyTo ? String(payload.replyTo) : undefined,
       })
+    },
+
+    async 'fx.refresh'(db, _job, payload) {
+      const base = String(payload.base)
+      const quote = String(payload.quote)
+      const date = payload.date ? new Date(String(payload.date)) : new Date()
+      const fx = createFxRateProvider(db)
+      await fx.getRate(base, quote, date)
+    },
+
+    async 'maintenance.purge'(db, _job) {
+      await purgeDeletedWorkspaces(db)
     },
   }
 }
