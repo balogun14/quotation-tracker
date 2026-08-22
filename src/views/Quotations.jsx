@@ -97,7 +97,7 @@ export function Quotations({ quotes, initialFilter, onNewQuote, onOpenQuote }) {
                     </span>
                   </span>
                   <span className="cell-service">{q.service}</span>
-                  <span className="cell-value">{money.format(q.value)}</span>
+                  <span className="cell-value">{money.format(q.value, q.currency)}</span>
                   <span className="cell-status">
                     <StatusPill status={q.status} />
                   </span>

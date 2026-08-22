@@ -47,7 +47,7 @@ export function Kanban({ quotes, onMove, onOpenQuote, onNewQuote }) {
                   <h3>{STATUS_META[status].label}</h3>
                   <span className="board-count">{items.length}</span>
                 </div>
-                <span className="board-value">{money.format(value)}</span>
+                <span className="board-value">{money.format(value, items[0]?.currency)}</span>
               </header>
 
               <div className="board-cards">
@@ -94,7 +94,7 @@ export function Kanban({ quotes, onMove, onOpenQuote, onNewQuote }) {
                     </button>
 
                     <div className="board-card-foot">
-                      <span className="board-amount">{money.format(q.value)}</span>
+                      <span className="board-amount">{money.format(q.value, q.currency)}</span>
                       <span className={`board-follow ${q.followUp === 'Overdue' ? 'overdue' : ''}`}>
                         {q.followUp === 'Overdue' ? 'Overdue' : `Follow-up ${q.followUp}`}
                       </span>

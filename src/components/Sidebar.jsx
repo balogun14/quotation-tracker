@@ -44,7 +44,7 @@ export function Sidebar({ view, onNavigate, counts, user, onSignOut }) {
 
       <div className="side-bottom">
         <div className="side-profile">
-          <span className="avatar avatar-side">{user.business.charAt(0).toUpperCase()}</span>
+          <span className="avatar avatar-side">{(user.business || '?').charAt(0).toUpperCase()}</span>
           <div className="side-profile-text">
             <strong>{user.business}</strong>
             <small>{user.email}</small>

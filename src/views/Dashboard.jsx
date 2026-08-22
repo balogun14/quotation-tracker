@@ -132,7 +132,7 @@ export function Dashboard({ quotes, onNewQuote, onOpenQuote, onNavigate, user })
                   <small>{q.company} · {q.service}</small>
                 </span>
                 <span className="list-value">
-                  <strong>{money.format(q.value)}</strong>
+                  <strong>{money.format(q.value, q.currency)}</strong>
                   <small>Sent {q.sent}</small>
                 </span>
                 <StatusPill status={q.status} />

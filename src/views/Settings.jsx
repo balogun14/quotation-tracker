@@ -1,15 +1,44 @@
 import { useState } from 'react'
 import { Building24Regular, Key24Regular, Mail24Regular, Person24Regular, Send24Regular } from '@fluentui/react-icons'
 import { Field } from '../ui.jsx'
+import { api } from '../api.js'
 
-export function Settings({ user, onSaved }) {
-  const [saved, setSaved] = useState(false)
+export function Settings({ user, workspace, onSaved, onUpdateBranding }) {
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
 
-  const save = (e) => {
+  const saveBranding = async (e) => {
     e.preventDefault()
-    setSaved(true)
-    onSaved('Settings saved for this session.')
-    setTimeout(() => setSaved(false), 2500)
+    const data = Object.fromEntries(new FormData(e.currentTarget))
+    setError('')
+    setSaving(true)
+    try {
+      await onUpdateBranding({
+        businessName: String(data.businessName || '').trim() || undefined,
+        replyToEmail: String(data.replyToEmail || '').trim() || undefined,
+        phone: String(data.phone || '').trim() || null,
+        address: String(data.address || '').trim() || null,
+        website: String(data.website || '').trim() || null,
+        paymentInstructions: String(data.paymentInstructions || '').trim() || null,
+        defaultCurrency: String(data.defaultCurrency || '').trim().toUpperCase() || undefined,
+        accentColor: String(data.accentColor || '').trim() || undefined,
+      })
+      onSaved('Workspace profile saved.')
+    } catch (err) {
+      setError(err.message || 'Could not save your profile.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const sendVerify = async () => {
+    setError('')
+    try {
+      await api('/account/verify-email', { method: 'POST' })
+      onSaved('Verification email sent.')
+    } catch (err) {
+      setError(err.message || 'Could not send verification email.')
+    }
   }
 
   return (
@@ -22,8 +51,10 @@ export function Settings({ user, onSaved }) {
         </div>
       </section>
 
+      {error && <div className="form-error">{error}</div>}
+
       <div className="settings-grid">
-        <form className="panel settings-panel" onSubmit={save}>
+        <form className="panel settings-panel" onSubmit={saveBranding}>
           <div className="panel-head">
             <div>
               <h2>Business profile</h2>
@@ -35,66 +66,81 @@ export function Settings({ user, onSaved }) {
           </div>
           <div className="form-grid">
             <Field label="Business name">
-              <input defaultValue={user?.business} />
+              <input name="businessName" defaultValue={workspace?.businessName || user?.business} required />
             </Field>
-            <Field label="Owner name">
-              <input defaultValue={user?.name} />
-            </Field>
-            <Field label="Email address">
+            <Field label="Reply-to email">
               <span className="input-wrap">
                 <Mail24Regular className="input-icon" />
-                <input type="email" defaultValue={user?.email} />
+                <input name="replyToEmail" type="email" defaultValue={workspace?.replyToEmail || user?.email} required />
               </span>
             </Field>
             <Field label="Phone number">
               <span className="input-wrap">
                 <Person24Regular className="input-icon" />
-                <input type="tel" defaultValue="+234 800 000 0000" />
+                <input name="phone" type="tel" defaultValue={workspace?.phone || ''} />
               </span>
+            </Field>
+            <Field label="Address">
+              <input name="address" defaultValue={workspace?.address || ''} />
+            </Field>
+            <Field label="Website">
+              <input name="website" type="url" defaultValue={workspace?.website || ''} placeholder="https://…" />
+            </Field>
+            <Field label="Default currency">
+              <input name="defaultCurrency" defaultValue={workspace?.defaultCurrency || 'NGN'} maxLength={3} placeholder="NGN" />
+            </Field>
+            <Field label="Accent colour">
+              <input name="accentColor" type="color" defaultValue={workspace?.accentColor || '#8B5A2B'} />
+            </Field>
+            <Field label="Payment instructions">
+              <textarea name="paymentInstructions" rows={2} defaultValue={workspace?.paymentInstructions || ''} />
             </Field>
           </div>
           <div className="panel-foot">
-            <span className="foot-note">Profile saved locally for this demo.</span>
-            <button className="btn btn-primary" type="submit" disabled={saved}>
-              {saved ? 'Saved' : 'Save profile'}
+            <span className="foot-note">Saved to your workspace.</span>
+            <button className="btn btn-primary" type="submit" disabled={saving}>
+              {saving ? 'Saving…' : 'Save profile'}
             </button>
           </div>
         </form>
 
-        <form className="panel settings-panel" onSubmit={save}>
+        <div className="panel settings-panel">
           <div className="panel-head">
             <div>
-              <h2>Email delivery</h2>
-              <p>Connect your provider to send follow-ups from Quotely.</p>
+              <h2>Account</h2>
+              <p>Your sign-in details and email verification status.</p>
             </div>
             <span className="settings-icon">
-              <Send24Regular />
+              <Key24Regular />
             </span>
           </div>
           <div className="form-grid">
-            <Field label="Sending API endpoint">
-              <input placeholder="https://api.your-provider.com/send" />
+            <Field label="Name">
+              <input defaultValue={user?.name} disabled />
             </Field>
-            <Field label="From email">
+            <Field label="Email address">
               <span className="input-wrap">
                 <Mail24Regular className="input-icon" />
-                <input type="email" placeholder="hello@yourbusiness.com" />
+                <input defaultValue={user?.email} disabled />
               </span>
             </Field>
-            <Field label="API key" hint="Stored securely on your server — never exposed in the browser.">
+            <Field label="Email verification">
               <span className="input-wrap">
-                <Key24Regular className="input-icon" />
-                <input type="password" placeholder="Paste your API key here" />
+                <Send24Regular className="input-icon" />
+                <input
+                  defaultValue={user?.emailVerified ? 'Verified' : 'Not verified'}
+                  disabled
+                />
               </span>
             </Field>
           </div>
           <div className="panel-foot">
-            <span className="foot-note">Demo only — keys are not persisted.</span>
-            <button className="btn btn-primary" type="submit" disabled={saved}>
-              {saved ? 'Saved' : 'Save settings'}
+            <span className="foot-note">Verify your email to unlock sensitive actions.</span>
+            <button className="btn btn-outline" type="button" onClick={sendVerify} disabled={user?.emailVerified}>
+              {user?.emailVerified ? 'Verified' : 'Send verification email'}
             </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   )

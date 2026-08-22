@@ -5,13 +5,14 @@ import {
   ChevronDown24Regular,
   Delete24Regular,
   Dismiss24Regular,
+  Link24Regular,
   Mail24Regular,
   Phone24Regular,
   Send24Regular,
   SignOut24Regular,
 } from '@fluentui/react-icons'
 import './App.css'
-import { loadQuotes, money, saveQuotes, STATUS_META, STAGES } from './data.js'
+import { money, STATUS_META } from './adapt.js'
 import { Avatar, Field, Modal, StatusPill } from './ui.jsx'
 import { Sidebar } from './components/Sidebar.jsx'
 import { Auth } from './views/Auth.jsx'
@@ -20,6 +21,8 @@ import { Quotations } from './views/Quotations.jsx'
 import { FollowUps } from './views/FollowUps.jsx'
 import { Kanban } from './views/Kanban.jsx'
 import { Settings } from './views/Settings.jsx'
+import { api, restoreSession, setAccessToken } from './api.js'
+import { quoteToUi, workspaceToUi } from './adapt.js'
 
 const LS_USER = 'quotely.user'
 const VIEW_TITLES = {
@@ -38,23 +41,89 @@ export default function App() {
       return null
     }
   })
-  const [quotes, setQuotes] = useState(loadQuotes)
+  const [workspace, setWorkspace] = useState(null)
+  const [quotes, setQuotes] = useState([])
   const [view, setView] = useState('overview')
   const [filter, setFilter] = useState('All')
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [modal, setModal] = useState(null)
   const [toast, setToast] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
 
+  // Boot: if we have a stored user, try to restore the session (cookie refresh).
+  const [booted, setBooted] = useState(!user)
   useEffect(() => {
-    saveQuotes(quotes)
-  }, [quotes])
+    if (!user) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const ok = await restoreSession()
+        if (!cancelled && !ok) {
+          // Cookie expired or no session — drop the stored user.
+          try {
+            localStorage.removeItem(LS_USER)
+          } catch {
+            /* ignore */
+          }
+          setUser(null)
+        }
+      } catch {
+        /* ignore */
+      } finally {
+        if (!cancelled) setBooted(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [user])
 
   useEffect(() => {
     if (!toast) return
     const t = setTimeout(() => setToast(''), 3600)
     return () => clearTimeout(t)
   }, [toast])
+
+  // Load workspace + quotes once authenticated.
+  useEffect(() => {
+    if (!user || !booted) return
+    let cancelled = false
+    setBusy(true)
+    setError('')
+    ;(async () => {
+      try {
+        const list = await api('/workspaces')
+        const ws = list.items?.[0]
+        if (!ws) throw new Error('No workspace found for this account.')
+        const wsData = workspaceToUi(ws)
+        if (!cancelled) setWorkspace(wsData)
+        const me = await api('/account/me').catch(() => null)
+        if (me && !cancelled) {
+          setUser((u) => {
+            const next = { ...u, name: me.name, email: me.email, emailVerified: Boolean(me.emailVerifiedAt) }
+            try {
+              localStorage.setItem(LS_USER, JSON.stringify(next))
+            } catch {
+              /* ignore */
+            }
+            return next
+          })
+        }
+        const page = await api(`/workspaces/${ws.id}/quotes?limit=100`)
+        const ui = (page.items || []).map(quoteToUi)
+        if (!cancelled) setQuotes(ui)
+      } catch (err) {
+        if (!cancelled) setError(err.message || 'Could not load your workspace.')
+      } finally {
+        if (!cancelled) setBusy(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [user, booted])
 
   const counts = useMemo(
     () => ({
@@ -74,8 +143,12 @@ export default function App() {
     }
   }
 
-  const signOut = () => {
+  const signOut = async () => {
+    await signOut().catch(() => {})
+    setAccessToken('')
     setUser(null)
+    setWorkspace(null)
+    setQuotes([])
     setMenuOpen(false)
     setDrawerOpen(false)
     try {
@@ -93,45 +166,107 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  const addQuote = (data, status = 'Sent') => {
-    const quote = {
-      id: Date.now(),
-      client: data.client,
-      company: data.company,
-      email: data.email,
-      phone: data.phone || '',
-      service: data.service,
-      value: Number(data.value) || 0,
-      sent: '17 Aug 2026',
-      followUp: status === 'Booked' ? 'Completed' : status === 'Lost' ? 'Closed' : 'Today',
-      status,
+  const refreshQuotes = async () => {
+    if (!workspace) return
+    const page = await api(`/workspaces/${workspace.id}/quotes?limit=100`)
+    setQuotes((page.items || []).map(quoteToUi))
+  }
+
+  // --- Actions ---
+
+  const createQuote = async (data) => {
+    if (!workspace) return
+    const payload = {
+      clientName: data.client,
+      clientCompany: data.company,
+      clientEmail: data.email,
+      clientPhone: data.phone || undefined,
+      serviceDescription: data.service,
+      currency: workspace.defaultCurrency || 'NGN',
+      items: [{ description: data.service, quantity: 1, unitPriceMinor: Math.round((Number(data.value) || 0) * 100) }],
+      expiryDate: data.expiry || null,
     }
-    setQuotes((all) => [quote, ...all])
+    await api(`/workspaces/${workspace.id}/quotes`, { method: 'POST', body: payload })
+    await refreshQuotes()
     setModal(null)
     setToast('New quotation added to your pipeline.')
   }
 
-  const moveQuote = (id, status) => {
-    setQuotes((all) =>
-      all.map((q) =>
-        q.id === id
-          ? { ...q, status, followUp: status === 'Booked' ? 'Completed' : status === 'Lost' ? 'Closed' : q.followUp }
-          : q,
-      ),
-    )
-    setToast(`Moved to ${STATUS_META[status].label}.`)
+  const sendQuote = async (quote) => {
+    if (!workspace) return
+    const raw = quote._raw || quote
+    const res = await api(`/workspaces/${workspace.id}/quotes/${raw.id}/send`, { method: 'POST' })
+    const link = res?.result?.publicUrl
+    await refreshQuotes()
+    setModal(null)
+    setToast(link ? `Quote sent — public link: ${link}` : 'Quote sent.')
   }
 
-  const deleteQuote = (id) => {
-    setQuotes((all) => all.filter((q) => q.id !== id))
-    setModal(null)
-    setToast('Quotation deleted.')
+  const moveQuote = async (id, stage) => {
+    if (!workspace) return
+    const quote = quotes.find((q) => q.id === id)
+    const raw = quote?._raw || quote
+    if (!raw) return
+    if (stage === 'Booked' || stage === 'Lost') {
+      // Terminal transitions happen via the customer's public link decision,
+      // not directly from the internal UI.
+      setToast(`${STATUS_META[stage].label} is recorded when the customer responds to the public link.`)
+      return
+    }
+    if (stage !== 'Followed Up') {
+      // Only the followed_up transition is available internally.
+      setToast(`Stage changes for ${STATUS_META[stage].label} are handled via the public link.`)
+      return
+    }
+    await api(`/workspaces/${workspace.id}/quotes/${raw.id}`, { method: 'PATCH', body: draftInput(raw) })
+    await refreshQuotes()
+    setToast(`Moved to ${STATUS_META[stage].label}.`)
   }
 
-  const sendFollowUp = (quote) => {
-    setQuotes((all) => all.map((q) => (q.id === quote.id ? { ...q, status: 'Followed Up', followUp: '23 Aug' } : q)))
+  const draftInput = (quote) => ({
+    clientName: quote.clientName ?? quote.client,
+    clientCompany: quote.clientCompany ?? quote.company,
+    clientEmail: quote.clientEmail ?? quote.email,
+    clientPhone: quote.clientPhone ?? quote.phone,
+    serviceDescription: quote.serviceDescription ?? quote.service,
+    currency: quote.currency,
+    items: quote.items && quote.items.length
+      ? quote.items.map((i) => ({ description: i.description, quantity: i.quantity, unitPriceMinor: i.unitPriceMinor }))
+      : [{ description: quote.service ?? quote.serviceDescription, quantity: 1, unitPriceMinor: Math.round((quote.value || 0) * 100) }],
+    expiryDate: quote.expiryDate ?? undefined,
+    followUpMode: quote.followUpMode ?? 'reminder',
+  })
+
+  const deleteQuote = async (quote) => {
+    if (!workspace) return
+    const raw = quote._raw || quote
+    await api(`/workspaces/${workspace.id}/quotes/${raw.id}`, { method: 'DELETE' })
+    await refreshQuotes()
     setModal(null)
-    setToast(`Follow-up prepared for ${quote.client}. Connect your sending API in Settings to deliver it.`)
+    setToast('Quotation cancelled.')
+  }
+
+  const sendFollowUp = async (quote) => {
+    if (!workspace) return
+    const raw = quote._raw || quote
+    await api(`/workspaces/${workspace.id}/quotes/${raw.id}/send`, { method: 'POST' })
+    await refreshQuotes()
+    setModal(null)
+    setToast(`Follow-up sent to ${quote.client}.`)
+  }
+
+  const revokeLinks = async (quote) => {
+    if (!workspace) return
+    const raw = quote._raw || quote
+    const res = await api(`/workspaces/${workspace.id}/quotes/${raw.id}/revoke-links`, { method: 'POST' })
+    setToast(`Revoked ${res?.revoked ?? 0} public link(s).`)
+  }
+
+  const updateBranding = async (input) => {
+    if (!workspace) return
+    const res = await api(`/workspaces/${workspace.id}/branding`, { method: 'PATCH', body: input })
+    setWorkspace(workspaceToUi(res.workspace))
+    return res.workspace
   }
 
   if (!user) {
@@ -201,7 +336,10 @@ export default function App() {
         </header>
 
         <main className="content">
-          {view === 'overview' && (
+          {busy && !quotes.length && <div className="page-loading">Loading your workspace…</div>}
+          {!busy && error && <div className="page-error">{error}</div>}
+
+          {!busy && !error && view === 'overview' && (
             <Dashboard
               quotes={quotes}
               user={user}
@@ -210,7 +348,7 @@ export default function App() {
               onNavigate={navigate}
             />
           )}
-          {view === 'quotations' && (
+          {!busy && !error && view === 'quotations' && (
             <Quotations
               quotes={quotes}
               initialFilter={filter}
@@ -218,7 +356,7 @@ export default function App() {
               onOpenQuote={(q) => setModal({ type: 'detail', quote: q })}
             />
           )}
-          {view === 'board' && (
+          {!busy && !error && view === 'board' && (
             <Kanban
               quotes={quotes}
               onMove={moveQuote}
@@ -226,31 +364,39 @@ export default function App() {
               onNewQuote={(status) => setModal({ type: 'new', status: status || 'Sent' })}
             />
           )}
-          {view === 'followups' && (
+          {!busy && !error && view === 'followups' && (
             <FollowUps
               quotes={quotes}
               onOpenQuote={(q) => setModal({ type: 'detail', quote: q })}
               onFollowUp={(q) => setModal({ type: 'followup', quote: q })}
             />
           )}
-          {view === 'settings' && <Settings user={user} onSaved={setToast} />}
+          {!busy && !error && view === 'settings' && (
+            <Settings
+              user={user}
+              workspace={workspace}
+              onSaved={setToast}
+              onUpdateBranding={updateBranding}
+            />
+          )}
         </main>
       </div>
 
       {modal?.type === 'new' && (
         <NewQuoteModal
-          defaultStatus={modal.status || 'Sent'}
+          currency={workspace?.defaultCurrency || 'NGN'}
           onClose={() => setModal(null)}
-          onSubmit={addQuote}
+          onSubmit={createQuote}
         />
       )}
       {modal?.type === 'detail' && (
         <QuoteDetailModal
           quote={modal.quote}
           onClose={() => setModal(null)}
-          onStatus={moveQuote}
           onFollowUp={(q) => setModal({ type: 'followup', quote: q })}
           onDelete={deleteQuote}
+          onSend={sendQuote}
+          onRevokeLinks={revokeLinks}
         />
       )}
       {modal?.type === 'followup' && (
@@ -270,11 +416,11 @@ export default function App() {
   )
 }
 
-function NewQuoteModal({ defaultStatus, onClose, onSubmit }) {
+function NewQuoteModal({ currency, onClose, onSubmit }) {
   const submit = (e) => {
     e.preventDefault()
     const data = Object.fromEntries(new FormData(e.currentTarget))
-    onSubmit(data, data.status || defaultStatus)
+    onSubmit(data)
   }
   return (
     <Modal
@@ -307,24 +453,20 @@ function NewQuoteModal({ defaultStatus, onClose, onSubmit }) {
         <Field label="Service">
           <input name="service" required placeholder="Event furniture hire" />
         </Field>
-        <Field label="Quote value (NGN)">
+        <Field label={`Quote value (${currency})`}>
           <input name="value" type="number" min="0" required placeholder="500000" />
         </Field>
-        <Field label="Stage">
-          <select name="status" defaultValue={defaultStatus}>
-            {STAGES.map((s) => (
-              <option key={s} value={s}>{STATUS_META[s].label}</option>
-            ))}
-          </select>
+        <Field label="Expiry date (optional)">
+          <input name="expiry" type="date" />
         </Field>
       </form>
     </Modal>
   )
 }
 
-function QuoteDetailModal({ quote, onClose, onStatus, onFollowUp, onDelete }) {
-  const won = quote.status === 'Booked'
-  const lost = quote.status === 'Lost'
+function QuoteDetailModal({ quote, onClose, onFollowUp, onDelete, onSend, onRevokeLinks }) {
+  const draft = quote.status === 'Draft'
+  const sendable = draft || quote.status === 'Sent' || quote.status === 'Followed Up'
   return (
     <Modal
       open
@@ -334,25 +476,27 @@ function QuoteDetailModal({ quote, onClose, onStatus, onFollowUp, onDelete }) {
       size="lg"
       footer={
         <>
-          <button className="btn btn-danger btn-ghost" onClick={() => onDelete(quote.id)}>
+          <button className="btn btn-danger btn-ghost" onClick={() => onDelete(quote)}>
             <Delete24Regular />
-            Delete
+            {draft ? 'Cancel' : 'Cancel quote'}
           </button>
           <span className="spacer" />
-          {!lost && !won && (
+          {sendable && (
             <>
               <button className="btn btn-ghost" onClick={() => onFollowUp(quote)}>
                 <Mail24Regular />
                 Follow up
               </button>
-              <button className="btn btn-outline" onClick={() => onStatus(quote.id, 'Lost')}>
-                Mark lost
+              <button className="btn btn-primary" onClick={() => onSend(quote)}>
+                <Send24Regular />
+                {draft ? 'Send quote' : 'Re-send'}
               </button>
             </>
           )}
-          {!won && (
-            <button className="btn btn-primary" onClick={() => onStatus(quote.id, 'Booked')}>
-              Mark booked
+          {!draft && (
+            <button className="btn btn-outline" onClick={() => onRevokeLinks(quote)}>
+              <Link24Regular />
+              Revoke links
             </button>
           )}
         </>
@@ -365,7 +509,7 @@ function QuoteDetailModal({ quote, onClose, onStatus, onFollowUp, onDelete }) {
             <StatusPill status={quote.status} />
             <p>{quote.company}</p>
           </div>
-          <span className="detail-value">{money.format(quote.value)}</span>
+          <span className="detail-value">{money.format(quote.value, quote.currency)}</span>
         </div>
 
         <div className="detail-grid">
@@ -393,7 +537,7 @@ function QuoteDetailModal({ quote, onClose, onStatus, onFollowUp, onDelete }) {
           )}
           <div className="detail-item">
             <span>Stage</span>
-            <strong>{STATUS_META[quote.status].label}</strong>
+            <strong>{STATUS_META[quote.status]?.label || quote.status}</strong>
           </div>
         </div>
       </div>
@@ -415,7 +559,7 @@ function FollowUpModal({ quote, business, onClose, onSend }) {
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" onClick={() => onSend(quote)}>
             <Send24Regular />
-            Prepare follow-up
+            Send follow-up
           </button>
         </>
       }
@@ -434,7 +578,7 @@ function FollowUpModal({ quote, business, onClose, onSend }) {
         <Field label="Message">
           <textarea rows={7} defaultValue={message} />
         </Field>
-        <p className="followup-note">Sent via your configured email API once connected in Settings.</p>
+        <p className="followup-note">A follow-up email is queued and delivered by the Quotely worker.</p>
       </div>
     </Modal>
   )

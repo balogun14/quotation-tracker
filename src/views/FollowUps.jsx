@@ -94,7 +94,7 @@ function FollowCard({ q, onFollowUp, onOpenQuote, overdue }) {
         </div>
         <p>{q.service}</p>
         <div className="follow-card-meta">
-          <span>{money.format(q.value)}</span>
+          <span>{money.format(q.value, q.currency)}</span>
           <span>·</span>
           <span>Sent {q.sent}</span>
           <span>·</span>
