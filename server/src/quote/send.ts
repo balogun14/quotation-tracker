@@ -186,3 +186,5 @@ export function createDefaultSendService() {
     email: createEmailProvider(config),
   })
 }
+
+export type SendService = ReturnType<typeof createSendService>
