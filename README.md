@@ -1,16 +1,52 @@
-# React + Vite
+# Quotely
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Rental-business quotation tracking: shared workspaces, branded PDF quotes,
+follow-up automation, public accept/decline links, and multi-currency reporting.
 
-Currently, two official plugins are available:
+## Repository layout
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- `src/` — React/Vite frontend (prototype; being connected to the API).
+- `server/` — TypeScript/Express backend (`/api/v1`), background job worker,
+  SQLite via Drizzle.
+- `docs/` — `prd-backend.md` (requirements) and `operations.md` (ops runbook).
+- `scripts/backup.sh` — encrypted off-host daily backup (age + rclone).
+- `docker-compose.yml` — api + worker containers on a single VPS.
 
-## React Compiler
+## Backend quick start
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Requirements: Node 24+, npm.
 
-## Expanding the Oxlint configuration
+```sh
+cd server
+npm ci
+npm run typecheck
+npm test            # vitest (NODE_ENV=test)
+npm run dev         # tsx watch, API on http://localhost:3000
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+In a second terminal, start the job worker:
+
+```sh
+cd server
+npm run worker
+```
+
+OpenAPI spec: `GET http://localhost:3000/api/v1/openapi.json`.
+
+Set `NODE_ENV=test` when running tests from a shell that defaults to
+`production` — the config layer refuses the dev-only default `JWT_SECRET` in
+production mode.
+
+## Docker deployment
+
+Build and run the full stack (API + worker, shared `./data` volume):
+
+```sh
+docker compose up -d --build
+curl http://localhost:3000/health
+```
+
+Configuration: copy `server/.env.example` to `.env` (repo root), set
+`JWT_SECRET`, `PUBLIC_BASE_URL`, `CORS_ORIGIN`, and optionally
+`EMAIL_PROVIDER=resend` + `RESEND_API_KEY`. See `docs/operations.md` for
+deployment, backups, restore, and monitoring.
