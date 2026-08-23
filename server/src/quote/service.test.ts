@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { createTestDb } from '../test/db.js'
 import { signup } from '../auth/service.js'
-import { createQuote, getQuote, listQuotes, updateQuote, cancelQuote } from './service.js'
+import { createQuote, getQuote, listQuotes, updateQuote, cancelQuote, transitionQuote } from './service.js'
 import type { QuoteInput } from './schema.js'
 
 const baseInput: QuoteInput = {
@@ -83,6 +83,19 @@ describe('quote service', () => {
     await expect(updateQuote(db, workspace.id, user.id, quote.id, baseInput)).rejects.toMatchObject({
       code: 'CONFLICT',
     })
+    close()
+  })
+
+  it('moves a quote freely between board stages', async () => {
+    const { db, close, user, workspace } = await setup()
+    const quote = await createQuote(db, workspace.id, user.id, baseInput)
+    await transitionQuote(db, workspace.id, user.id, quote.id, 'sent')
+    const followedUp = await transitionQuote(db, workspace.id, user.id, quote.id, 'followed_up')
+    expect(followedUp.status).toBe('followed_up')
+    const accepted = await transitionQuote(db, workspace.id, user.id, quote.id, 'accepted')
+    expect(accepted.status).toBe('accepted')
+    const movedBack = await transitionQuote(db, workspace.id, user.id, quote.id, 'sent')
+    expect(movedBack.status).toBe('sent')
     close()
   })
 

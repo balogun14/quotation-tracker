@@ -24,6 +24,7 @@ export interface SendResult {
   versionNumber: number
   publicToken: string
   publicUrl: string
+  emailDelivered: boolean
 }
 
 const DAY_MS = 86_400_000
@@ -136,6 +137,7 @@ export function createSendService(deps: SendDeps) {
     })
 
     const publicUrl = `${config.PUBLIC_BASE_URL}/p/${token}`
+    let emailDelivered = !quote.clientEmail
     if (quote.clientEmail) {
       // ponytail: inline email send; move to a retried job in the worker slice
       try {
@@ -149,8 +151,10 @@ export function createSendService(deps: SendDeps) {
             `Review and respond: ${publicUrl}\n\n` +
             `This quotation is valid until ${expiryDate.toISOString().slice(0, 10)}.\n`,
         })
-      } catch (err) {
-        console.warn('Failed to send quote email', err)
+        emailDelivered = true
+      } catch {
+        // The quote and public link remain valid. Delivery status is returned
+        // to the UI without leaking provider/network internals into logs.
       }
     }
 
@@ -167,7 +171,7 @@ export function createSendService(deps: SendDeps) {
       enqueueJob(db, type, payload, { scheduledAt }),
     )
 
-    return { quoteId, versionNumber, publicToken: token, publicUrl }
+    return { quoteId, versionNumber, publicToken: token, publicUrl, emailDelivered }
   }
 
   async function previewPdf(db: Db, workspaceId: string, actorId: string, quoteId: string): Promise<Buffer> {

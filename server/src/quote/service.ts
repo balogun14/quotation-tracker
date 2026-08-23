@@ -3,7 +3,7 @@ import type { TxDb } from '../db/index.js'
 import { quotes, quoteItems, type Quote, type QuoteItem } from '../db/schema.js'
 import { errors } from '../errors.js'
 import { computeTotals } from '../domain/money.js'
-import { canTransition } from '../domain/lifecycle.js'
+import { canTransition, type QuoteStatus } from '../domain/lifecycle.js'
 import { requireMember } from '../workspace/service.js'
 import { cancelPendingFollowUps } from '../followup/service.js'
 import { recordAudit } from '../audit/service.js'
@@ -164,6 +164,40 @@ export async function cancelQuote(
     entityId: quoteId,
     before: { status: quote.status },
     after: { status: 'cancelled' },
+  })
+  return withItems(db, updated)
+}
+
+export async function transitionQuote(
+  db: TxDb,
+  workspaceId: string,
+  actorId: string,
+  quoteId: string,
+  status: QuoteStatus,
+): Promise<QuoteWithItems> {
+  await requireMember(db, workspaceId, actorId)
+  const quote = await getQuote(db, workspaceId, quoteId)
+  // The board is a staff-managed pipeline: its four columns may be reordered
+  // freely, unlike automated lifecycle events such as cancellation/expiry.
+  if (!['sent', 'followed_up', 'accepted', 'declined'].includes(status)) {
+    throw errors.validation('Invalid board stage')
+  }
+
+  const [updated] = await db
+    .update(quotes)
+    .set({ status, decidedAt: status === 'accepted' || status === 'declined' ? new Date() : null, updatedAt: new Date() })
+    .where(eq(quotes.id, quoteId))
+    .returning()
+  if (!updated) throw errors.notFound('Quote not found')
+  if (status === 'accepted' || status === 'declined') await cancelPendingFollowUps(db, quoteId)
+  await recordAudit(db, {
+    workspaceId,
+    actorId,
+    action: 'quote.stage_changed',
+    entityType: 'quote',
+    entityId: quoteId,
+    before: { status: quote.status },
+    after: { status },
   })
   return withItems(db, updated)
 }

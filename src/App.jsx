@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Add24Regular,
   CheckmarkCircle24Regular,
@@ -21,7 +21,7 @@ import { Quotations } from './views/Quotations.jsx'
 import { FollowUps } from './views/FollowUps.jsx'
 import { Kanban } from './views/Kanban.jsx'
 import { Settings } from './views/Settings.jsx'
-import { api, restoreSession, setAccessToken } from './api.js'
+import { api, restoreSession, setAccessToken, signOut as apiSignOut } from './api.js'
 import { quoteToUi, workspaceToUi } from './adapt.js'
 
 const LS_USER = 'quotely.user'
@@ -50,7 +50,9 @@ export default function App() {
   const [modal, setModal] = useState(null)
   const [toast, setToast] = useState('')
   const [busy, setBusy] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
   const [error, setError] = useState('')
+  const userId = user?.id
 
   // Boot: if we have a stored user, try to restore the session (cookie refresh).
   const [booted, setBooted] = useState(!user)
@@ -88,7 +90,7 @@ export default function App() {
 
   // Load workspace + quotes once authenticated.
   useEffect(() => {
-    if (!user || !booted) return
+    if (!userId || !booted) return
     let cancelled = false
     setBusy(true)
     setError('')
@@ -123,7 +125,9 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [user, booted])
+  // Account details are refreshed during bootstrap. Depend on the stable ID, not
+  // the user object, so that refresh cannot restart bootstrap indefinitely.
+  }, [userId, booted])
 
   const counts = useMemo(
     () => ({
@@ -144,7 +148,9 @@ export default function App() {
   }
 
   const signOut = async () => {
-    await signOut().catch(() => {})
+    if (signingOut) return
+    setSigningOut(true)
+    await apiSignOut().catch(() => {})
     setAccessToken('')
     setUser(null)
     setWorkspace(null)
@@ -156,6 +162,7 @@ export default function App() {
     } catch {
       /* ignore */
     }
+    setSigningOut(false)
   }
 
   const navigate = (v, statusFilter) => {
@@ -197,9 +204,10 @@ export default function App() {
     const raw = quote._raw || quote
     const res = await api(`/workspaces/${workspace.id}/quotes/${raw.id}/send`, { method: 'POST' })
     const link = res?.result?.publicUrl
+    const emailDelivered = res?.result?.emailDelivered
     await refreshQuotes()
     setModal(null)
-    setToast(link ? `Quote sent — public link: ${link}` : 'Quote sent.')
+    setToast(emailDelivered === false ? `Quote saved, but its email could not be delivered. Share this link: ${link}` : link ? `Quote sent — public link: ${link}` : 'Quote sent.')
   }
 
   const moveQuote = async (id, stage) => {
@@ -207,18 +215,8 @@ export default function App() {
     const quote = quotes.find((q) => q.id === id)
     const raw = quote?._raw || quote
     if (!raw) return
-    if (stage === 'Booked' || stage === 'Lost') {
-      // Terminal transitions happen via the customer's public link decision,
-      // not directly from the internal UI.
-      setToast(`${STATUS_META[stage].label} is recorded when the customer responds to the public link.`)
-      return
-    }
-    if (stage !== 'Followed Up') {
-      // Only the followed_up transition is available internally.
-      setToast(`Stage changes for ${STATUS_META[stage].label} are handled via the public link.`)
-      return
-    }
-    await api(`/workspaces/${workspace.id}/quotes/${raw.id}`, { method: 'PATCH', body: draftInput(raw) })
+    const statuses = { Sent: 'sent', 'Followed Up': 'followed_up', Booked: 'accepted', Lost: 'declined' }
+    await api(`/workspaces/${workspace.id}/quotes/${raw.id}/status`, { method: 'POST', body: { status: statuses[stage] } })
     await refreshQuotes()
     setToast(`Moved to ${STATUS_META[stage].label}.`)
   }
@@ -249,10 +247,10 @@ export default function App() {
   const sendFollowUp = async (quote) => {
     if (!workspace) return
     const raw = quote._raw || quote
-    await api(`/workspaces/${workspace.id}/quotes/${raw.id}/send`, { method: 'POST' })
+    const res = await api(`/workspaces/${workspace.id}/quotes/${raw.id}/send`, { method: 'POST' })
     await refreshQuotes()
     setModal(null)
-    setToast(`Follow-up sent to ${quote.client}.`)
+    setToast(res?.result?.emailDelivered === false ? `Follow-up saved, but the email could not be delivered.` : `Follow-up sent to ${quote.client}.`)
   }
 
   const revokeLinks = async (quote) => {
@@ -289,6 +287,7 @@ export default function App() {
           counts={counts}
           user={user}
           onSignOut={signOut}
+          signingOut={signingOut}
         />
       </aside>
 
@@ -325,9 +324,9 @@ export default function App() {
                   <button onClick={() => { setMenuOpen(false); navigate('settings') }}>
                     Settings
                   </button>
-                  <button className="menu-danger" onClick={signOut}>
+                  <button className="menu-danger" onClick={signOut} disabled={signingOut}>
                     <SignOut24Regular />
-                    Sign out
+                    {signingOut ? 'Signing out…' : 'Sign out'}
                   </button>
                 </div>
               )}
@@ -417,10 +416,27 @@ export default function App() {
 }
 
 function NewQuoteModal({ currency, onClose, onSubmit }) {
-  const submit = (e) => {
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
+  const submittingRef = useRef(false)
+
+  const submit = async (e) => {
     e.preventDefault()
+    // State updates are asynchronous; the ref closes the tiny window in which
+    // a second click can arrive before the button is rerendered as disabled.
+    if (submittingRef.current) return
+    submittingRef.current = true
+    setSubmitting(true)
+    setSubmitError('')
     const data = Object.fromEntries(new FormData(e.currentTarget))
-    onSubmit(data)
+    try {
+      await onSubmit(data)
+    } catch (err) {
+      setSubmitError(err.message || 'Could not save the quotation. Please try again.')
+    } finally {
+      submittingRef.current = false
+      setSubmitting(false)
+    }
   }
   return (
     <Modal
@@ -430,13 +446,14 @@ function NewQuoteModal({ currency, onClose, onSubmit }) {
       title="Add a quotation"
       footer={
         <>
-          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" form="new-quote-form" type="submit">
-            Save quotation
+          <button className="btn btn-ghost" onClick={onClose} disabled={submitting}>Cancel</button>
+          <button className="btn btn-primary" form="new-quote-form" type="submit" disabled={submitting}>
+            {submitting ? 'Saving…' : 'Save quotation'}
           </button>
         </>
       }
     >
+      {submitError && <div className="form-error">{submitError}</div>}
       <form id="new-quote-form" className="form-grid" onSubmit={submit}>
         <Field label="Client name">
           <input name="client" required placeholder="Amina Bello" />

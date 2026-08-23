@@ -243,6 +243,18 @@
   background: var(--surface);
 }
 
+.public-quote { min-height: 100dvh; display: grid; place-items: center; padding: 24px; background: var(--bg); }
+.public-card { width: min(100%, 680px); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); padding: clamp(24px, 5vw, 48px); }
+.public-card h1 { margin: 8px 0; font-size: clamp(26px, 5vw, 38px); letter-spacing: -0.03em; }
+.public-client { color: var(--muted); margin: 0 0 28px; }
+.public-lines { border-top: 1px solid var(--border); }
+.public-lines > div { display: flex; justify-content: space-between; gap: 18px; padding: 14px 0; border-bottom: 1px solid var(--border); color: var(--text-2); }
+.public-lines strong { color: var(--text); white-space: nowrap; }
+.public-lines .public-total { font-size: 18px; font-weight: 700; color: var(--text); }
+.public-notes { color: var(--muted); line-height: 1.6; }
+.public-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 28px; }
+.public-response { margin: 28px 0 0; color: var(--accent); font-weight: 600; }
+
 .auth-brand {
   position: relative;
   display: flex;

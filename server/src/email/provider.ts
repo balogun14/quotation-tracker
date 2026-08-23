@@ -1,4 +1,5 @@
 import type { Config } from '../config.js'
+import type { Logger } from 'pino'
 
 export interface EmailMessage {
   to: string
@@ -13,8 +14,13 @@ export interface EmailProvider {
 }
 
 export class ConsoleEmailProvider implements EmailProvider {
+  constructor(private logger?: Logger) {}
   async send(message: EmailMessage): Promise<void> {
-    console.log(JSON.stringify({ type: 'email', ...message }))
+    if (this.logger) {
+      this.logger.info({ type: 'email', to: message.to, subject: message.subject }, 'email queued')
+    } else {
+      console.log(JSON.stringify({ type: 'email', ...message }))
+    }
   }
 }
 
@@ -44,10 +50,11 @@ export class ResendEmailProvider implements EmailProvider {
   }
 }
 
-export function createEmailProvider(config: Config): EmailProvider {
+export function createEmailProvider(config: Config, logger?: Logger): EmailProvider {
   if (config.EMAIL_PROVIDER === 'resend') {
     if (!config.RESEND_API_KEY) throw new Error('RESEND_API_KEY is required when EMAIL_PROVIDER=resend')
     return new ResendEmailProvider(config.RESEND_API_KEY, config.EMAIL_FROM)
   }
-  return new ConsoleEmailProvider()
+  return new ConsoleEmailProvider(logger)
 }
+

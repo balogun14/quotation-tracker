@@ -7,7 +7,7 @@ const NAV = [
   { id: 'followups', label: 'Follow-ups', icon: Mail24Regular },
 ]
 
-export function Sidebar({ view, onNavigate, counts, user, onSignOut }) {
+export function Sidebar({ view, onNavigate, counts, user, onSignOut, signingOut }) {
   const navWithBadge = NAV.map((n) => ({ ...n, badge: counts[n.id] }))
   return (
     <div className="sidebar">
@@ -49,7 +49,7 @@ export function Sidebar({ view, onNavigate, counts, user, onSignOut }) {
             <strong>{user.business}</strong>
             <small>{user.email}</small>
           </div>
-          <button className="icon-btn side-signout" onClick={onSignOut} aria-label="Sign out" title="Sign out">
+          <button className="icon-btn side-signout" onClick={onSignOut} disabled={signingOut} aria-label="Sign out" title={signingOut ? 'Signing out' : 'Sign out'}>
             <SignOut24Regular />
           </button>
         </div>

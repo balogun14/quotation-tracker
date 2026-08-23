@@ -73,7 +73,8 @@ describe('HTTP API', () => {
     const { app, close } = setup()
     const res = await request(app).get('/api/v1/workspaces')
     expect(res.status).toBe(401)
-    expect(res.body).toEqual({ error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } })
+    expect(res.body).toMatchObject({ error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } })
+    expect(res.body.requestId).toBeTruthy()
     close()
   })
 

@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Shell(npx tsc -p tsconfig.json --noEmit)",
+      "Shell(dir /b src\\test* src\\**\\*.test.ts 2>nul)",
+      "Shell(npx vitest run src/http/app.test.ts)",
+      "Shell(dir /b .env* vitest* 2>nul)",
+      "Shell(set:*)",
+      "Shell(npx vitest run 2 >& 1)",
+      "Shell(Select-Object:*)",
+      "powershell",
+      "Shell(git:*)",
+      "Shell(git commit -F - <<'EOF' backend: Express HTTP API — auth, workspaces, quotes, public links, reports, OpenAPI EOF)",
+      "Shell(powershell -Command \"Get-ChildItem src/db/migrations | Select-Object -First 5 Name\")",
+      "Shell(docker:*)",
+      "Shell(npm:*)",
+      "Shell(npx oxlint src 2>&1)",
+      "Shell(npx tsx src/index.ts)",
+      "Shell(powershell -Command \"Start-Sleep -Seconds 3; try { $h = Invoke-RestMethod http://localhost:3000/health; Write-Output ('health=' + ($h | ConvertTo-Json -Compress)) } catch { Write-Output ('ERR: ' + $_.Exception.Message) }\")",
+      "Shell(powershell -Command \"Start-Sleep -Seconds 4; try { $r = Invoke-RestMethod http://localhost:5173/ -MaximumRedirection 0 -ErrorAction SilentlyContinue; Write-Output ('frontend up') } catch { if ($_.Exception.Response.StatusCode -eq 302 -or $_.Exception.Response.StatusCode.value__ -eq 200) { Write-Output 'frontend up (redirect)' } else { Write-Output ('ERR: ' + $_.Exception.Message) } }; try { $h = Invoke-RestMethod http://localhost:5173/health; Write-Output ('proxy health=' + ($h | ConvertTo-Json -Compress)) } catch { Write-Output ('proxy ERR: ' + $_.Exception.Message) }\")"
+    ],
+    "deny": [],
+    "defaultMode": "auto-accept"
+  }
+}

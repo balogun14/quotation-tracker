@@ -10,15 +10,26 @@ const sqlite = openDb()
 runMigrations(sqlite)
 const db = createOrm(sqlite)
 
-const logger = pino({ level: config.NODE_ENV === 'test' ? 'silent' : 'info' })
+const logger = pino(
+  config.NODE_ENV === 'development'
+    ? {
+        level: config.LOG_LEVEL,
+        redact: ['req.headers.authorization', 'req.headers.cookie', 'authorization', 'cookie'],
+        transport: { target: 'pino-pretty', options: { colorize: true, translateTime: 'SYS:HH:MM:ss' } },
+      }
+    : {
+        level: config.LOG_LEVEL,
+        redact: ['req.headers.authorization', 'req.headers.cookie', 'authorization', 'cookie'],
+      },
+)
 
 const app = createApp({
   db,
   storage: new LocalFileStorage(config.FILE_STORAGE_DIR),
-  email: createEmailProvider(config),
+  email: createEmailProvider(config, logger),
   logger,
 })
 
 app.listen(config.PORT, () => {
-  logger.info({ port: config.PORT }, 'Quotely API listening')
+  if (config.NODE_ENV !== 'test') logger.info({ port: config.PORT }, 'Quotely API listening')
 })

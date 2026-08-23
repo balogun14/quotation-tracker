@@ -1,12 +1,15 @@
 import { Router } from 'express'
+import { z } from 'zod'
 import type { Db } from '../db/index.js'
-import { createQuote, getQuote, updateQuote, cancelQuote, listQuotes } from '../quote/service.js'
+import { createQuote, getQuote, updateQuote, cancelQuote, listQuotes, transitionQuote } from '../quote/service.js'
 import type { QuoteWithItems } from '../quote/service.js'
 import type { SendService } from '../quote/send.js'
 import { createPublicService } from '../public/service.js'
 import type { FileStorageProvider } from '../files/storage.js'
 import { requireMember } from '../workspace/service.js'
 import { asyncRoute, requireAuth, param } from './middleware.js'
+
+const statusSchema = z.object({ status: z.enum(['sent', 'followed_up', 'accepted', 'declined']) }).strict()
 
 function serializeQuote(quote: QuoteWithItems) {
   return quote
@@ -47,6 +50,15 @@ export function quoteRoutes(db: Db, deps: { storage: FileStorageProvider; send: 
     const quoteId = param(req, 'quoteId')
     await requireMember(db, workspaceId, userId)
     const quote = await updateQuote(db, workspaceId, userId, quoteId, req.body)
+    res.json({ quote: serializeQuote(quote) })
+  }))
+
+  r.post('/:id/quotes/:quoteId/status', asyncRoute(async (req, res) => {
+    const { userId } = res.locals
+    const workspaceId = param(req, 'id')
+    const quoteId = param(req, 'quoteId')
+    const { status } = statusSchema.parse(req.body)
+    const quote = await transitionQuote(db, workspaceId, userId, quoteId, status)
     res.json({ quote: serializeQuote(quote) })
   }))
 

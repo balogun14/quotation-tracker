@@ -1,0 +1,27 @@
+# Taste
+- Prefers SQLite for the database. Confidence: 0.9
+- Prefers JWT for authentication. Confidence: 0.9
+- Prefers the Express framework for the backend. Confidence: 0.9
+- Likes to use the `/grill-me` skill for requirements gathering before building. Confidence: 0.9
+- Wants multi-user workspace support in SaaS-style apps. Confidence: 0.8
+- Values multi-currency support with FX conversion in financial/business apps. Confidence: 0.8
+- Prefers using an interface/adapter pattern around swappable services (e.g. email via Resend with a configurable adapter, file storage) so the provider can be swapped later. Confidence: 0.9
+- Prefers local-first storage for now (e.g. local file storage), with cloud storage deferred to later. Confidence: 0.8
+- Requires at least 80% test coverage. Confidence: 0.9
+- Wants a product requirements document (PRD) produced before/alongside development. Confidence: 0.9
+- Quotation/invoice records should include line items. Confidence: 0.8
+- Outbound emails (follow-ups) should be branded with the business's details. Confidence: 0.8
+- Prefers a premium-feel theme/aesthetic for interfaces. Confidence: 0.8
+- Requires apps to be fully mobile responsive. Confidence: 0.8
+- Likes kanban board views with drag-and-drop for pipeline visualization. Confidence: 0.8
+- Prefers incremental development in small "test-and-commit slices", committing after each slice is green. Confidence: 0.9
+- Prefers lean, minimal implementations ("ponytail mode") — avoid over-engineering beyond the stated requirements. Confidence: 0.8
+- Prefers a consistent JSON error envelope `{error: {code, message, details?}}` across the whole API (401/404/422/500). Confidence: 0.8
+- Wants an OpenAPI spec documenting all API routes. Confidence: 0.7
+- Prefers refresh tokens in HttpOnly cookies (Secure, SameSite=Lax) rather than in response bodies or localStorage. Confidence: 0.7
+- Prefers Zod (with `.strict()`) for validating HTTP request bodies/query inputs. Confidence: 0.7
+- Wants HTTP-level integration tests (e.g. supertest) covering full flows: signup, auth, CRUD, public links, health/ready. Confidence: 0.7
+- Requires typecheck (`tsc --noEmit`) and the full test suite to be green before committing. Confidence: 0.6
+- Prefers conventional-style commit messages with a scope prefix (e.g. `backend: ...`). Confidence: 0.6
+- Does not want the agent to add itself as a co-author on git commits (no co-authored-by trailer). Confidence: 0.9
+- Delegates in-progress tasks with full permission ("you have full permission", "finish all slices") and expects the agent to autonomously finish the work (tests green + committed) for the user to review afterwards. The user often goes offline while the agent works and does their own end-to-end testing when they return ("i will be going offline... i will test all when i am done"). Confidence: 0.8

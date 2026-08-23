@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import { z } from 'zod'
 
 const envSchema = z.object({
@@ -12,9 +13,11 @@ const envSchema = z.object({
     .default('false')
     .transform((v) => v === 'true'),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
+  TRUST_PROXY: z.coerce.number().int().min(0).default(0),
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   EMAIL_PROVIDER: z.enum(['console', 'resend']).default('console'),
   RESEND_API_KEY: z.string().optional(),
-  EMAIL_FROM: z.string().default('Quotely <no-reply@quotely.app>'),
+  EMAIL_FROM: z.string().default('Quotely <no-reply@quadstores.com>'),
   FX_BASE_URL: z.string().default('https://api.frankfurter.dev/v1'),
   PUBLIC_BASE_URL: z.string().default('http://localhost:5173'),
   FILE_STORAGE_DIR: z.string().default('./data/files'),

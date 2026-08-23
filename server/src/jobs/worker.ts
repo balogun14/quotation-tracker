@@ -1,3 +1,4 @@
+import type { Logger } from 'pino'
 import type { Db } from '../db/index.js'
 import { claimDueJobs, completeJob, failJob } from './service.js'
 import type { JobHandler } from './handlers.js'
@@ -7,7 +8,7 @@ export interface Worker {
   start(intervalMs?: number): () => void
 }
 
-export function createWorker(db: Db, handlers: Record<string, JobHandler>): Worker {
+export function createWorker(db: Db, handlers: Record<string, JobHandler>, logger?: Logger): Worker {
   async function runOnce(now: Date = new Date()): Promise<number> {
     const claimed = await claimDueJobs(db, now, 10)
     for (const job of claimed) {
@@ -20,6 +21,7 @@ export function createWorker(db: Db, handlers: Record<string, JobHandler>): Work
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         await failJob(db, job.id, message, job.attempts, job.maxAttempts)
+        logger?.warn?.({ jobId: job.id, type: job.type, error: message }, 'job failed')
       }
     }
     return claimed.length
@@ -27,7 +29,9 @@ export function createWorker(db: Db, handlers: Record<string, JobHandler>): Work
 
   function start(intervalMs = 5000): () => void {
     const timer = setInterval(() => {
-      runOnce().catch((err) => console.error('worker tick failed', err))
+      runOnce().catch((err) => {
+        logger?.error?.({ err }, 'worker tick failed')
+      })
     }, intervalMs)
     return () => clearInterval(timer)
   }
