@@ -29,6 +29,26 @@ export interface SendResult {
 
 const DAY_MS = 86_400_000
 
+const escapeHtml = (value: string) => value
+  .replaceAll('&', '&amp;')
+  .replaceAll('<', '&lt;')
+  .replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;')
+  .replaceAll("'", '&#39;')
+
+function quoteEmailHtml(clientName: string, businessName: string, publicUrl: string, expiryDate: Date) {
+  const client = escapeHtml(clientName)
+  const business = escapeHtml(businessName)
+  const url = escapeHtml(publicUrl)
+  const expiry = expiryDate.toISOString().slice(0, 10)
+  return `<!doctype html><html><body style="margin:0;background:#f6f7f9;font-family:Arial,sans-serif;color:#1c2430"><main style="max-width:600px;margin:32px auto;background:#fff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden"><header style="padding:28px 32px;background:#18212f;color:#fff"><h1 style="margin:0;font-size:24px">${business}</h1><p style="margin:8px 0 0;color:#d6dce5">Your quotation is ready</p></header><section style="padding:32px"><p style="margin-top:0">Hi ${client},</p><p>Please find your quotation from ${business} below.</p><p style="margin:28px 0"><a href="${url}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:12px 20px;border-radius:6px;font-weight:700">Review quotation</a></p><p style="color:#5b6472;font-size:14px">This quotation is valid until <strong>${expiry}</strong>.</p></section></main></body></html>`
+}
+
+export interface FollowUpInput {
+  subject: string
+  message: string
+}
+
 export function createSendService(deps: SendDeps) {
   async function resolveExpiry(
     db: TxDb,
@@ -150,6 +170,7 @@ export function createSendService(deps: SendDeps) {
             `Please find your quotation from ${snapshot.workspace.businessName} below.\n\n` +
             `Review and respond: ${publicUrl}\n\n` +
             `This quotation is valid until ${expiryDate.toISOString().slice(0, 10)}.\n`,
+          html: quoteEmailHtml(quote.clientName, snapshot.workspace.businessName, publicUrl, expiryDate),
         })
         emailDelivered = true
       } catch {
@@ -181,7 +202,42 @@ export function createSendService(deps: SendDeps) {
     return renderQuotePdf(snapshot)
   }
 
-  return { sendQuote, previewPdf }
+  async function sendFollowUp(
+    db: Db,
+    workspaceId: string,
+    actorId: string,
+    quoteId: string,
+    input: FollowUpInput,
+  ) {
+    await requireMember(db, workspaceId, actorId)
+    const quote = await getQuote(db, workspaceId, quoteId)
+    if (quote.status !== 'sent' && quote.status !== 'followed_up') {
+      throw errors.conflict(`Cannot follow up on a ${quote.status} quote`)
+    }
+    if (!quote.clientEmail) throw errors.validation('This quotation has no client email address')
+
+    const workspace = await getWorkspace(db, workspaceId)
+    await deps.email.send({
+      to: quote.clientEmail,
+      replyTo: workspace.replyToEmail,
+      subject: input.subject,
+      text: input.message,
+      html: `<p>${escapeHtml(input.message).replaceAll('\n', '<br>')}</p>`,
+    })
+    if (quote.status === 'sent') {
+      await db.update(quotes).set({ status: 'followed_up', updatedAt: new Date() }).where(eq(quotes.id, quoteId))
+    }
+    await recordAudit(db, {
+      workspaceId,
+      actorId,
+      action: 'quote.followed_up',
+      entityType: 'quote',
+      entityId: quoteId,
+    })
+    return { emailDelivered: true }
+  }
+
+  return { sendQuote, previewPdf, sendFollowUp }
 }
 
 export function createDefaultSendService() {

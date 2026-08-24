@@ -30,7 +30,7 @@ describe('send service', () => {
     const dir = mkdtempSync(join(tmpdir(), 'quotely-'))
     tempDirs.push(dir)
     const email = new FakeEmail()
-    const { sendQuote, previewPdf } = createSendService({
+    const { sendQuote, previewPdf, sendFollowUp } = createSendService({
       storage: new LocalFileStorage(dir),
       email,
     })
@@ -40,7 +40,7 @@ describe('send service', () => {
       password: 'pw123456',
       businessName: 'Acme Rentals',
     })
-    return { db, close, dir, email, sendQuote, previewPdf, user, workspace }
+    return { db, close, dir, email, sendQuote, previewPdf, sendFollowUp, user, workspace }
   }
 
   const draft = {
@@ -75,6 +75,19 @@ describe('send service', () => {
     expect(email.sent).toHaveLength(1)
     expect(email.sent[0]!.to).toBe('amina@brightpath.co')
     expect(email.sent[0]!.text).toContain(result.publicUrl)
+    expect(email.sent[0]!.html).toContain('Review quotation')
+    expect(email.sent[0]!.html).toContain(result.publicUrl)
+    close()
+  })
+
+  it('uses the workspace default expiry when no expiry date was supplied', async () => {
+    const { db, close, sendQuote, user, workspace } = await setup()
+    const quote = await createQuote(db, workspace.id, user.id, { ...draft, expiryDate: null })
+
+    await sendQuote(db, workspace.id, user.id, quote.id)
+
+    const updated = await getQuote(db, workspace.id, quote.id)
+    expect(updated.expiryDate!.getTime()).toBeGreaterThan(Date.now() + 13 * 86_400_000)
     close()
   })
 
@@ -89,6 +102,24 @@ describe('send service', () => {
     const versions = await db.select().from(quoteVersions).where(eq(quoteVersions.quoteId, quote.id))
     expect(versions).toHaveLength(2)
     expect(first.publicToken).not.toBe(second.publicToken)
+    close()
+  })
+
+  it('sends a follow-up without creating another quotation version', async () => {
+    const { db, close, email, sendQuote, sendFollowUp, user, workspace } = await setup()
+    const quote = await createQuote(db, workspace.id, user.id, draft)
+    await sendQuote(db, workspace.id, user.id, quote.id)
+
+    await sendFollowUp(db, workspace.id, user.id, quote.id, {
+      subject: 'Checking in on your quotation',
+      message: 'Hi Amina,\n\nJust checking whether you have any questions.\n\nThanks,\nAcme Rentals',
+    })
+
+    const versions = await db.select().from(quoteVersions).where(eq(quoteVersions.quoteId, quote.id))
+    expect(versions).toHaveLength(1)
+    expect(email.sent).toHaveLength(2)
+    expect(email.sent[1]).toMatchObject({ subject: 'Checking in on your quotation' })
+    expect((await getQuote(db, workspace.id, quote.id)).status).toBe('followed_up')
     close()
   })
 

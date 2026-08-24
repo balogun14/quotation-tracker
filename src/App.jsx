@@ -183,6 +183,18 @@ export default function App() {
 
   const createQuote = async (data) => {
     if (!workspace) return
+    const items = data.items.map((item, index) => {
+      const quantity = Number(item.quantity)
+      const unitPrice = Number(item.unitPrice)
+      if (!item.description.trim()) throw new Error(`Line item ${index + 1} needs a description.`)
+      if (!Number.isInteger(quantity) || quantity < 1) throw new Error(`Line item ${index + 1} needs a whole-number quantity of at least 1.`)
+      if (!Number.isFinite(unitPrice) || unitPrice < 0) throw new Error(`Line item ${index + 1} needs a valid unit price.`)
+      return {
+        description: item.description.trim(),
+        quantity,
+        unitPriceMinor: Math.round(unitPrice * 100),
+      }
+    })
     const payload = {
       clientName: data.client,
       clientCompany: data.company,
@@ -190,8 +202,8 @@ export default function App() {
       clientPhone: data.phone || undefined,
       serviceDescription: data.service,
       currency: workspace.defaultCurrency || 'NGN',
-      items: [{ description: data.service, quantity: 1, unitPriceMinor: Math.round((Number(data.value) || 0) * 100) }],
-      expiryDate: data.expiry || null,
+      items,
+      ...(data.expiry ? { expiryDate: data.expiry } : {}),
     }
     await api(`/workspaces/${workspace.id}/quotes`, { method: 'POST', body: payload })
     await refreshQuotes()
@@ -244,10 +256,10 @@ export default function App() {
     setToast('Quotation cancelled.')
   }
 
-  const sendFollowUp = async (quote) => {
+  const sendFollowUp = async (quote, input) => {
     if (!workspace) return
     const raw = quote._raw || quote
-    const res = await api(`/workspaces/${workspace.id}/quotes/${raw.id}/send`, { method: 'POST' })
+    const res = await api(`/workspaces/${workspace.id}/quotes/${raw.id}/follow-up`, { method: 'POST', body: input })
     await refreshQuotes()
     setModal(null)
     setToast(res?.result?.emailDelivered === false ? `Follow-up saved, but the email could not be delivered.` : `Follow-up sent to ${quote.client}.`)
@@ -418,6 +430,7 @@ export default function App() {
 function NewQuoteModal({ currency, onClose, onSubmit }) {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
+  const [items, setItems] = useState([{ description: '', quantity: 1, unitPrice: '' }])
   const submittingRef = useRef(false)
 
   const submit = async (e) => {
@@ -430,9 +443,12 @@ function NewQuoteModal({ currency, onClose, onSubmit }) {
     setSubmitError('')
     const data = Object.fromEntries(new FormData(e.currentTarget))
     try {
-      await onSubmit(data)
+      await onSubmit({ ...data, items })
     } catch (err) {
-      setSubmitError(err.message || 'Could not save the quotation. Please try again.')
+      const details = err?.details && typeof err.details === 'object'
+        ? Object.values(err.details).flat().filter(Boolean).join(' ')
+        : ''
+      setSubmitError(details || err.message || 'Could not save the quotation. Please try again.')
     } finally {
       submittingRef.current = false
       setSubmitting(false)
@@ -470,9 +486,20 @@ function NewQuoteModal({ currency, onClose, onSubmit }) {
         <Field label="Service">
           <input name="service" required placeholder="Event furniture hire" />
         </Field>
-        <Field label={`Quote value (${currency})`}>
-          <input name="value" type="number" min="0" required placeholder="500000" />
-        </Field>
+        <div className="field line-items form-field-wide">
+          <div className="line-items-heading">
+            <label>Line items</label>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setItems((current) => [...current, { description: '', quantity: 1, unitPrice: '' }])}>Add item</button>
+          </div>
+          {items.map((item, index) => (
+            <div className="line-item-row" key={index}>
+              <input aria-label={`Item ${index + 1} description`} value={item.description} required placeholder="Item description" onChange={(e) => setItems((current) => current.map((entry, i) => i === index ? { ...entry, description: e.target.value } : entry))} />
+              <input aria-label={`Item ${index + 1} quantity`} value={item.quantity} type="number" min="1" step="1" required onChange={(e) => setItems((current) => current.map((entry, i) => i === index ? { ...entry, quantity: e.target.value } : entry))} />
+              <input aria-label={`Item ${index + 1} unit price in ${currency}`} value={item.unitPrice} type="number" min="0" step="0.01" required placeholder={`Unit price (${currency})`} onChange={(e) => setItems((current) => current.map((entry, i) => i === index ? { ...entry, unitPrice: e.target.value } : entry))} />
+              {items.length > 1 && <button type="button" className="icon-btn" aria-label={`Remove item ${index + 1}`} onClick={() => setItems((current) => current.filter((_, i) => i !== index))}><Dismiss24Regular /></button>}
+            </div>
+          ))}
+        </div>
         <Field label="Expiry date (optional)">
           <input name="expiry" type="date" />
         </Field>
@@ -563,8 +590,8 @@ function QuoteDetailModal({ quote, onClose, onFollowUp, onDelete, onSend, onRevo
 }
 
 function FollowUpModal({ quote, business, onClose, onSend }) {
-  const subject = `Following up on your ${quote.service.toLowerCase()}`
-  const message = `Hello ${quote.client.split(' ')[0]},\n\nI wanted to follow up on the quotation I sent for ${quote.service}. Please let me know if you have any questions or would like to proceed.\n\nKind regards,\n${business}`
+  const [subject, setSubject] = useState(`Following up on your ${quote.service.toLowerCase()}`)
+  const [message, setMessage] = useState(`Hello ${quote.client.split(' ')[0]},\n\nI wanted to follow up on the quotation I sent for ${quote.service}. Please let me know if you have any questions or would like to proceed.\n\nKind regards,\n${business}`)
   return (
     <Modal
       open
@@ -574,7 +601,7 @@ function FollowUpModal({ quote, business, onClose, onSend }) {
       footer={
         <>
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={() => onSend(quote)}>
+          <button className="btn btn-primary" onClick={() => onSend(quote, { subject, message })}>
             <Send24Regular />
             Send follow-up
           </button>
@@ -590,10 +617,10 @@ function FollowUpModal({ quote, business, onClose, onSend }) {
           </div>
         </div>
         <Field label="Subject">
-          <input defaultValue={subject} />
+          <input value={subject} onChange={(e) => setSubject(e.target.value)} />
         </Field>
         <Field label="Message">
-          <textarea rows={7} defaultValue={message} />
+          <textarea rows={7} value={message} onChange={(e) => setMessage(e.target.value)} />
         </Field>
         <p className="followup-note">A follow-up email is queued and delivered by the Quotely worker.</p>
       </div>

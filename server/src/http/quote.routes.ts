@@ -10,6 +10,10 @@ import { requireMember } from '../workspace/service.js'
 import { asyncRoute, requireAuth, param } from './middleware.js'
 
 const statusSchema = z.object({ status: z.enum(['sent', 'followed_up', 'accepted', 'declined']) }).strict()
+const followUpSchema = z.object({
+  subject: z.string().trim().min(1).max(200),
+  message: z.string().trim().min(1).max(5000),
+}).strict()
 
 function serializeQuote(quote: QuoteWithItems) {
   return quote
@@ -77,6 +81,14 @@ export function quoteRoutes(db: Db, deps: { storage: FileStorageProvider; send: 
     const quoteId = param(req, 'quoteId')
     await requireMember(db, workspaceId, userId)
     const result = await deps.send.sendQuote(db, workspaceId, userId, quoteId)
+    res.json({ result })
+  }))
+
+  r.post('/:id/quotes/:quoteId/follow-up', asyncRoute(async (req, res) => {
+    const { userId } = res.locals
+    const workspaceId = param(req, 'id')
+    const quoteId = param(req, 'quoteId')
+    const result = await deps.send.sendFollowUp(db, workspaceId, userId, quoteId, followUpSchema.parse(req.body))
     res.json({ result })
   }))
 

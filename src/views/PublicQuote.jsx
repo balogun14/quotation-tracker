@@ -1,14 +1,24 @@
 import { useEffect, useMemo, useState } from 'react'
 import { formatMinor } from '../adapt.js'
 
+// A Vite preview/dev server can be left running with an older proxy config.
+// Public links must still work locally, so bypass that proxy only on localhost.
+const publicApiBase = window.location.hostname === 'localhost'
+  ? 'http://localhost:3000/api/v1'
+  : '/api/v1'
+
 export function PublicQuote({ token }) {
   const [view, setView] = useState(null)
   const [error, setError] = useState('')
   const [deciding, setDeciding] = useState(false)
 
   useEffect(() => {
-    fetch(`/api/v1/public/p/${encodeURIComponent(token)}`)
+    fetch(`${publicApiBase}/public/p/${encodeURIComponent(token)}`)
       .then(async (res) => {
+        const contentType = res.headers.get('content-type') || ''
+        if (!contentType.includes('application/json')) {
+          throw new Error('The quotation service returned an invalid response. Please try again shortly.')
+        }
         const body = await res.json()
         if (!res.ok) throw new Error(body?.error?.message || 'This quotation is unavailable.')
         setView(body)
@@ -21,9 +31,11 @@ export function PublicQuote({ token }) {
   const decide = async (decision) => {
     setDeciding(true)
     try {
-      const res = await fetch(`/api/v1/public/p/${encodeURIComponent(token)}/decide`, {
+      const res = await fetch(`${publicApiBase}/public/p/${encodeURIComponent(token)}/decide`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decision }),
       })
+      const contentType = res.headers.get('content-type') || ''
+      if (!contentType.includes('application/json')) throw new Error('The quotation service returned an invalid response. Please try again shortly.')
       const body = await res.json()
       if (!res.ok) throw new Error(body?.error?.message || 'Could not record your response.')
       setView((current) => ({ ...current, status: decision, decision }))

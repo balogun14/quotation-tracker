@@ -43,6 +43,25 @@ describe('quote service', () => {
     close()
   })
 
+  it('accepts the numeric line-item payload produced by the quotation form', async () => {
+    const { db, close, user, workspace } = await setup()
+    const quote = await createQuote(db, workspace.id, user.id, {
+      clientName: 'Amina Bello',
+      clientCompany: 'BrightPath Events',
+      clientEmail: 'amina@brightpath.co',
+      serviceDescription: 'Event furniture hire',
+      currency: 'NGN',
+      items: [
+        { description: 'Folding chair', quantity: Number('12'), unitPriceMinor: Math.round(Number('5000') * 100) },
+        { description: 'Round table', quantity: Number('2'), unitPriceMinor: Math.round(Number('12000.50') * 100) },
+      ],
+    })
+
+    expect(quote.items).toHaveLength(2)
+    expect(quote.totalMinor).toBe(8_400_100)
+    close()
+  })
+
   it('applies percent discount before tax', async () => {
     const { db, close, user, workspace } = await setup()
     const quote = await createQuote(db, workspace.id, user.id, {

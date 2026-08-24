@@ -20,7 +20,9 @@ export const quoteInputSchema = z.object({
   serviceDescription: z.string().trim().min(1).max(2000),
   notes: z.string().trim().max(5000).optional(),
   currency: z.string().regex(/^[A-Z]{3}$/),
-  expiryDate: z.coerce.date().optional(),
+  // `z.coerce.date()` turns null into 1970-01-01. Treat an absent form value
+  // as absent so the workspace default expiry can be applied when sending.
+  expiryDate: z.preprocess((v) => (v === null || v === '' ? undefined : v), z.coerce.date().optional()),
   discountType: z.enum(['percent', 'amount']).nullable().optional(),
   discountValue: z.number().int().min(0).default(0),
   taxRateBps: z.number().int().min(0).max(10_000).default(0),
